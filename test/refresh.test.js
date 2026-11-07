@@ -42,8 +42,8 @@ test('a successful refresh clears assumptions made on the previous snapshot whil
     const refresh = button('Refresh evidence');
     refresh.focus();
     refresh.click();
-    await waitFor(() => finishRefresh && button('Refreshing...')?.disabled);
-    assert.equal(button('Apply & refresh').disabled, true);
+    await waitFor(() => finishRefresh && button('Refreshing...')?.getAttribute('aria-disabled') === 'true');
+    assert.equal(button('Apply & refresh').getAttribute('aria-disabled'), 'true');
     console.log('refresh regression: deferred request pending');
     assert.equal(button('Try completing this').disabled, true);
     const checkbox = dom.window.document.querySelector('aside input[type=checkbox]');

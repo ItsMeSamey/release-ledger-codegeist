@@ -6,15 +6,15 @@ Updated 7 November 2026. This record separates local checks, a past development-
 
 The production configuration exposes the Jira issue panel and its read-only resolver. The earlier untested Rovo agent, action and function registration are excluded. The public manifest also omits the creator's app ID. Register a new app before using Forge deployment commands.
 
-The graph algorithm and Jira request functions retain the implementation used by the earlier development proof. The current UI includes keyboard continuity repairs and a refresh-race repair. While evidence refreshes, scenario controls are disabled. Accepting the response clears old assumptions.
+The graph algorithm and Jira request functions retain the implementation used by the earlier development proof. The current UI includes keyboard continuity repairs and a refresh-race repair. While evidence refreshes, scenario controls are disabled. The request controls remain focusable and reject duplicate activation. Accepting the response clears old assumptions.
 
-Six focused checks passed on the private production stage: resolver initialization, production manifest exposure, local scenario/briefing/reset behavior, Done-root behavior, preserved historical manifest references, and deferred refresh behavior. The public package replaces private registered-manifest checks with a template-or-registered-fork check. The behavioral tests use synthetic data and a mocked Forge bridge, not a live Jira request.
+Nine focused checks passed on the private production stage: resolver initialization, production manifest exposure, local scenario/briefing/reset behavior, Done-root behavior, preserved historical manifest references, deferred refresh behavior, delayed error/retry/Apply focus behavior, focus recovery from a removed input, and preservation of outside focus. The public package replaces private registered-manifest checks with a template-or-registered-fork check. The behavioral tests use synthetic data and a mocked Forge bridge, not a live Jira request.
 
 One production build completed with the locked dependencies. Its output is supplied in dist. This does not establish that the build is installed in production.
 
-The public manifest check passed separately. It accepts the supplied unregistered template or a fork with a valid non-nil registered ID, and checks the panel, resolver, read-only scope and compiled resource. Main application source and compiled UI match the private tested stage; private identity/history checks are not included in this package.
+The public manifest check passed separately. It accepts the supplied unregistered template or a fork with a non-nil ID in Forge's expected format, and checks the panel, resolver, read-only scope and compiled resource. The local check does not verify provider registration. Main application source and compiled UI match the private tested stage; private identity/history checks are not included in this package.
 
-Current Forge lint is pending. Its preparation stopped before launching the CLI because the established credential handoff had been relocated. No provider authentication failure or current lint result is inferred from that local setup check. Earlier Forge lint and the development-site proof remain historical evidence. No current production deployment or external installation link is claimed.
+Current Forge validation is incomplete. An initial preparation stopped before launching the CLI because the established credential handoff had been relocated. After that relocation was verified, the actual Forge CLI exited with UserNotFoundError. A final-source check using the verified earlier transport also returned that error. The CLI uses this error for several user-lookup and transport failure cases; the retained results do not establish a specific cause. Earlier Forge lint and the development-site proof remain historical evidence. No current production deployment or external installation link is claimed.
 
 ## Preserved failures and fixes
 
@@ -30,9 +30,11 @@ On 31 October, a small synthetic Jira graph on one user's development site exerc
 
 On 7 November, normal browser controls in the local synthetic preview verified the baseline and scenario counts, unknown-issue display, reset and briefing visibility. A disappearing control initially left focus on the page body. The corrected path focused Reset after completion and the first completion control after reset. Navigation through a replaced evidence link also showed local keyboard continuity. The snapshot did not expose the exact heading identity or textarea value.
 
-The refresh regression's focus assertion uses jsdom. It does not prove browser-native focus behavior. Pixel clipping, focus-ring appearance and current narrow-layout rendering were not established by those browser receipts.
+The first focused browser check of asynchronous refresh exposed a difference from jsdom: disabling the active Refresh button moved focus to the page body. Failed requests and replacing Retry during loading also lost focus. These failures were observed with the actual UI and a synthetic bridge, without Jira requests.
 
-A focused browser check of the new asynchronous refresh/error path is pending at this source release. Its test fixture uses the actual UI with a synthetic bridge and will be recorded separately. It does not access Jira.
+The first repair kept loading triggers focusable and inert and retained Retry during its request. A later browser check found another case: moving focus to the loaded link-type input while waiting still lost focus when an error removed the input. The current repair transfers focus to Retry only when the focused node belongs to the loaded graph region that the error removes. Successful Retry transfers focus to Refresh only if Retry still has focus. The old-source input regression failed, and the corrected delayed-response tests passed.
+
+The final browser recheck observed the pending input move to Retry after automatic failure, then successful retry recovery. Outside-control focus preservation is supported by the local regression only; the browser fixture had no continuously enabled outside control. A supported screenshot attempt timed out and returned no image, with target-debugger cleanup still uncertain. Pixel clipping, focus-ring appearance and current narrow-layout rendering remain unverified. These checks used the actual UI with a synthetic bridge, not a current Jira installation.
 
 ## Scope of benefit
 

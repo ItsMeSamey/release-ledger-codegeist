@@ -9,24 +9,30 @@ function App() {
   const [graph, setGraph] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [completed, setCompleted] = useState([]), [selected, setSelected] = useState(null), [blockType, setBlockType] = useState('Blocks');
   const [showBrief, setShowBrief] = useState(false);
-  const scenarioReset = useRef(null), firstChoice = useRef(null), refreshControl = useRef(null), evidenceHeading = useRef(null), pendingFocus = useRef(null);
+  const scenarioReset = useRef(null), firstChoice = useRef(null), refreshControl = useRef(null), evidenceHeading = useRef(null), pendingFocus = useRef(null), applyControl = useRef(null), retryControl = useRef(null), requestPending = useRef(false), graphRegion = useRef(null);
   useLayoutEffect(() => {
     const target = pendingFocus.current;
     pendingFocus.current = null;
     if (target === 'scenario') (scenarioReset.current || refreshControl.current)?.focus();
     if (target === 'baseline') (firstChoice.current || refreshControl.current)?.focus();
     if (target === 'evidence') evidenceHeading.current?.focus();
-  }, [completed, selected]);
+    if (target === 'retry') retryControl.current?.focus();
+    if (target === 'refresh') refreshControl.current?.focus();
+  }, [completed, selected, graph, error]);
   async function load() {
+    if (requestPending.current) return;
+    requestPending.current = true;
+    const trigger = document.activeElement;
+    const fromRetry = Boolean(retryControl.current) && trigger === retryControl.current;
     setBusy(true); setError(''); setCompleted([]); setShowBrief(false);
-    try { const value = demo ? structuredClone(demoGraph) : await (await import('@forge/bridge')).invoke('loadGraph', {blockType}); setCompleted([]); setGraph(value); setSelected(value.root); }
-    catch (e) { setGraph(null); setError(e?.message || 'Could not read Jira. Open the app from an issue and retry.'); }
-    finally { setBusy(false); }
+    try { const value = demo ? structuredClone(demoGraph) : await (await import('@forge/bridge')).invoke('loadGraph', {blockType}); if (fromRetry && document.activeElement === trigger) pendingFocus.current = 'refresh'; setCompleted([]); setGraph(value); setSelected(value.root); }
+    catch (e) { if (graphRegion.current?.contains(document.activeElement)) pendingFocus.current = 'retry'; setGraph(null); setError(e?.message || 'Could not read Jira. Open the app from an issue and retry.'); }
+    finally { requestPending.current = false; setBusy(false); }
   }
   useEffect(() => { load(); }, []);
   const result = useMemo(() => graph && analyze(graph, completed), [graph, completed]);
   const baseline = useMemo(() => graph && analyze(graph), [graph]);
-  if (!graph) return <main><div className="brand">RELEASE LEDGER</div><h1>Find the next move.</h1><p>Follow the work between an issue and delivery.</p>{busy ? <p role="status">Reading dependency evidence...</p> : <><p role="alert">{error}</p><label>Dependency link type (exact name or ID) <input value={blockType} onChange={e => setBlockType(e.target.value)} maxLength={80}/></label><button onClick={load}>Try again</button><p className="muted">Local preview: start the demo server and append ?demo=1. Production requires a Jira issue panel.</p></>}</main>;
+  if (!graph) return <main><div className="brand">RELEASE LEDGER</div><h1>Find the next move.</h1><p>Follow the work between an issue and delivery.</p>{busy ? <p role="status">Reading dependency evidence...</p> : <p role="alert">{error}</p>}<label>Dependency link type (exact name or ID) <input value={blockType} onChange={e => setBlockType(e.target.value)} maxLength={80}/></label><button ref={retryControl} aria-disabled={busy} onClick={load}>{busy ? 'Reading...' : 'Try again'}</button><p className="muted">Local preview: start the demo server and append ?demo=1. Production requires a Jira issue panel.</p></main>;
   const nodes = new Map(graph.nodes.map(n => [n.key, n]));
   const detail = nodes.get(selected);
   const levels = [];
@@ -46,13 +52,13 @@ function App() {
     if (fromDetail && key !== selected) pendingFocus.current = 'evidence';
     setSelected(key);
   }}>{key}</button>;
-  return <main>
+  return <main ref={graphRegion}>
     {demo && <div className="demo">SYNTHETIC DEMO / No connection to Jira</div>}
-    <header><div><div className="brand">RELEASE LEDGER <span>01 / DEPENDENCIES</span></div><h1>Find the next move.</h1><p className="subtitle">{graph.root} <span>/</span> {nodes.get(graph.root).summary}</p></div><button ref={refreshControl} className="secondary" disabled={busy} onClick={load}>{busy ? 'Refreshing...' : 'Refresh evidence'}</button></header>
+    <header><div><div className="brand">RELEASE LEDGER <span>01 / DEPENDENCIES</span></div><h1>Find the next move.</h1><p className="subtitle">{graph.root} <span>/</span> {nodes.get(graph.root).summary}</p></div><button ref={refreshControl} className="secondary" aria-disabled={busy} onClick={load}>{busy ? 'Refreshing...' : 'Refresh evidence'}</button></header>
     <section className="metrics" aria-label="Dependency overview">
       <article><b>{result.ready.length}</b><span>no open linked blockers</span></article><article><b>{result.blocked.length}</b><span>open linked blockers</span></article><article><b>{result.cycles.length}</b><span>dependency cycles</span></article><article className={result.unknown.length ? 'warn' : ''}><b>{result.unknown.length}</b><span>unknown dependencies</span></article>
     </section>
-    <div className="toolbar"><label>Dependency link type (name or ID) <input value={blockType} onChange={e => setBlockType(e.target.value)} maxLength={80}/></label><button className="secondary" onClick={load} disabled={busy || demo}>Apply & refresh</button><span className="muted">Snapshot {new Date(graph.capturedAt).toLocaleString()} / {graph.blockType}</span></div>
+    <div className="toolbar"><label>Dependency link type (name or ID) <input value={blockType} onChange={e => setBlockType(e.target.value)} maxLength={80}/></label><button ref={applyControl} className="secondary" onClick={load} disabled={demo} aria-disabled={busy || demo}>Apply & refresh</button><span className="muted">Snapshot {new Date(graph.capturedAt).toLocaleString()} / {graph.blockType}</span></div>
     {completed.length > 0 && <div className="scenario" role="status"><div><strong>What if {completed.length} task{completed.length > 1 ? 's were' : ' was'} completed?</strong><br/>{newlyReady.length ? `${newlyReady.join(', ')} have no visible open linked blockers in this scenario.` : 'No additional task has cleared its visible linked blockers.'} This scenario changes no Jira data.</div><button ref={scenarioReset} className="secondary" disabled={busy} onClick={resetScenario}>Reset scenario</button></div>}
     <div className="columns"><section className="next"><div className="section-label">YOUR NEXT MOVES</div><h2>Inspect the unblocked end of the chain.</h2><p>These issues have no visible open blockers of the selected link type. This does not establish capacity, workflow readiness, or priority. Order: most direct linked dependents cleared, then issue key.</p>
       {result.rootDone ? <p className="notice">The selected issue is marked Done in Jira. Its dependency chain was not traversed; Done is not proof of acceptance or delivery.</p> : result.choices.length === 0 && <p className="empty">Every visible open issue has a linked dependency or missing evidence. Inspect the cycles and unknown dependencies below.</p>}
