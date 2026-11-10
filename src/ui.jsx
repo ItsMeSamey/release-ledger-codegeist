@@ -9,7 +9,23 @@ function App() {
   const [graph, setGraph] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [completed, setCompleted] = useState([]), [selected, setSelected] = useState(null), [blockType, setBlockType] = useState('Blocks');
   const [showBrief, setShowBrief] = useState(false);
+  const [navigationError, setNavigationError] = useState(null), [openingIssue, setOpeningIssue] = useState(null);
+  const selectedIssue = useRef(null), navigationRequest = useRef(0), navigationPending = useRef(false);
   const scenarioReset = useRef(null), firstChoice = useRef(null), refreshControl = useRef(null), evidenceHeading = useRef(null), pendingFocus = useRef(null), applyControl = useRef(null), retryControl = useRef(null), requestPending = useRef(false), graphRegion = useRef(null);
+  function invalidateNavigation() {
+    navigationRequest.current++;
+    navigationPending.current = false;
+    setNavigationError(null); setOpeningIssue(null);
+  }
+  function selectIssue(key) {
+    if (key !== selectedIssue.current) invalidateNavigation();
+    selectedIssue.current = key;
+    setSelected(key);
+  }
+  useLayoutEffect(() => () => {
+    navigationRequest.current++;
+    navigationPending.current = false;
+  }, []);
   useLayoutEffect(() => {
     const target = pendingFocus.current;
     pendingFocus.current = null;
@@ -24,9 +40,10 @@ function App() {
     requestPending.current = true;
     const trigger = document.activeElement;
     const fromRetry = Boolean(retryControl.current) && trigger === retryControl.current;
+    invalidateNavigation();
     setBusy(true); setError(''); setCompleted([]); setShowBrief(false);
-    try { const value = demo ? structuredClone(demoGraph) : await (await import('@forge/bridge')).invoke('loadGraph', {blockType}); if (fromRetry && document.activeElement === trigger) pendingFocus.current = 'refresh'; setCompleted([]); setGraph(value); setSelected(value.root); }
-    catch (e) { if (graphRegion.current?.contains(document.activeElement)) pendingFocus.current = 'retry'; setGraph(null); setError(e?.message || 'Could not read Jira. Open the app from an issue and retry.'); }
+    try { const value = demo ? structuredClone(demoGraph) : await (await import('@forge/bridge')).invoke('loadGraph', {blockType}); if (fromRetry && document.activeElement === trigger) pendingFocus.current = 'refresh'; invalidateNavigation(); setCompleted([]); setGraph(value); selectIssue(value.root); }
+    catch (e) { if (graphRegion.current?.contains(document.activeElement)) pendingFocus.current = 'retry'; invalidateNavigation(); setGraph(null); setError(e?.message || 'Could not read Jira. Open the app from an issue and retry.'); }
     finally { requestPending.current = false; setBusy(false); }
   }
   useEffect(() => { load(); }, []);
@@ -35,6 +52,24 @@ function App() {
   if (!graph) return <main><div className="brand">RELEASE LEDGER</div><h1>Find the next move.</h1><p>Follow the work between an issue and delivery.</p>{busy ? <p role="status">Reading dependency evidence...</p> : <p role="alert">{error}</p>}<label>Dependency link type (exact name or ID) <input value={blockType} onChange={e => setBlockType(e.target.value)} maxLength={80}/></label><button ref={retryControl} aria-disabled={busy} onClick={load}>{busy ? 'Reading...' : 'Try again'}</button><p className="muted">Local preview: start the demo server and append ?demo=1. Production requires a Jira issue panel.</p></main>;
   const nodes = new Map(graph.nodes.map(n => [n.key, n]));
   const detail = nodes.get(selected);
+  async function openIssue() {
+    if (navigationPending.current || selectedIssue.current !== detail.key) return;
+    const key = detail.key, request = ++navigationRequest.current;
+    navigationPending.current = true;
+    setNavigationError(null); setOpeningIssue(key);
+    try {
+      const {router} = await import('@forge/bridge');
+      if (request !== navigationRequest.current) return;
+      await router.open(`/browse/${key}`);
+    } catch (error) {
+      if (request === navigationRequest.current) setNavigationError({key, error});
+    } finally {
+      if (request === navigationRequest.current) {
+        navigationPending.current = false;
+        setOpeningIssue(null);
+      }
+    }
+  }
   const levels = [];
   for (const key of baseline.active) {
     const depth = (baseline.paths[key]?.length || 1) - 1;
@@ -50,7 +85,7 @@ function App() {
   function resetScenario() { if (busy) return; pendingFocus.current = 'baseline'; setCompleted([]); }
   const evidence = (key, fromDetail = false) => <button className="text-button" onClick={() => {
     if (fromDetail && key !== selected) pendingFocus.current = 'evidence';
-    setSelected(key);
+    selectIssue(key);
   }}>{key}</button>;
   return <main ref={graphRegion}>
     {demo && <div className="demo">SYNTHETIC DEMO / No connection to Jira</div>}
@@ -66,8 +101,11 @@ function App() {
       {result.cycles.map(group => <article className="alert" key={group.join()}><strong>Coordinate this cycle</strong><p>{group.map((k, i) => <React.Fragment key={k}>{i > 0 && ' / '}{evidence(k)}</React.Fragment>)}</p><p>These tasks block one another. Review the links or agree how work can proceed together.</p></article>)}
       {result.unknown.length > 0 && <article className="alert"><strong>The picture is incomplete</strong><p>{result.unknown.map((k, i) => <React.Fragment key={k}>{i > 0 && ', '}{evidence(k)}</React.Fragment>)}</p><p>Unreadable or unvisited work stays unresolved. Access errors and request limits are not evidence of completion.</p></article>}
       {result.rootReady && <article className="notice">The selected issue has no visible open blockers of the selected link type. Check workflow, capacity, and acceptance criteria separately.</article>}
-    </section><aside><div className="section-label">ISSUE EVIDENCE</div>{detail && <><h2 ref={evidenceHeading} tabIndex={-1}>{detail.key}</h2><p className="detail-title">{detail.summary || 'Evidence unavailable'}</p><dl><dt>Status</dt><dd>{detail.available ? detail.status : detail.reason}</dd><dt>Owner</dt><dd>{detail.available ? detail.owner || 'Unassigned' : 'Unknown'}</dd><dt>Last updated</dt><dd>{detail.updated ? new Date(detail.updated).toLocaleString() : 'Unknown'}</dd><dt>Blocked by</dt><dd>{detail.dependencies.length ? detail.dependencies.map((key, i) => <React.Fragment key={key}>{i > 0 && ', '}{evidence(key, true)}</React.Fragment>) : detail.available ? 'No linked blockers' : 'Unknown'}</dd></dl>{detail.available && detail.key !== graph.root && !detail.done && <label className="check"><input type="checkbox" disabled={busy} checked={completed.includes(detail.key)} onChange={() => toggle(detail.key)}/>Assume complete in scenario</label>}{detail.available && !demo && <button className="secondary" onClick={async () => (await import('@forge/bridge')).router.open(`/browse/${detail.key}`)}>Open Jira issue</button>}<p className="muted">Evidence comes from issue status and the configured inward dependency links. Hidden or missing links cannot be inferred. The selected inward relation is interpreted as a blocker.</p></>}</aside></div>
-    <section className="map"><div className="section-label">FOLLOW THE DEPENDENCIES</div><h2>From delivery to the work beneath it.</h2><p>Each column is one step farther from the selected issue. Select a card to inspect its source evidence.</p><div className="layers">{levels.map((keys, i) => <div className="layer" key={i}><h3>{i === 0 ? 'Selected issue' : `Dependency depth ${i}`}</h3>{keys.map(key => <button key={key} className={`node ${state(key)} ${selected === key ? 'selected' : ''}`} onClick={() => setSelected(key)}><strong>{key}</strong><span>{nodes.get(key)?.summary || 'Unknown dependency'}</span><em>{state(key) === 'outside' ? 'Not needed in this scenario' : state(key) === 'assumed' ? 'Assumed complete' : state(key) === 'ready' ? 'No open linked blockers' : state(key) === 'blocked' ? 'Open linked blockers' : state(key)}</em></button>)}</div>)}</div></section>
+    </section><aside><div className="section-label">ISSUE EVIDENCE</div>{detail && <><h2 ref={evidenceHeading} tabIndex={-1}>{detail.key}</h2><p className="detail-title">{detail.summary || 'Evidence unavailable'}</p><dl><dt>Status</dt><dd>{detail.available ? detail.status : detail.reason}</dd><dt>Owner</dt><dd>{detail.available ? detail.owner || 'Unassigned' : 'Unknown'}</dd><dt>Last updated</dt><dd>{detail.updated ? new Date(detail.updated).toLocaleString() : 'Unknown'}</dd><dt>Blocked by</dt><dd>{detail.dependencies.length ? detail.dependencies.map((key, i) => <React.Fragment key={key}>{i > 0 && ', '}{evidence(key, true)}</React.Fragment>) : detail.available ? 'No linked blockers' : 'Unknown'}</dd></dl>{detail.available && detail.key !== graph.root && !detail.done && <label className="check"><input type="checkbox" disabled={busy} checked={completed.includes(detail.key)} onChange={() => toggle(detail.key)}/>Assume complete in scenario</label>}{detail.available && !demo && <>
+      <button className="secondary" aria-disabled={openingIssue === detail.key} aria-busy={openingIssue === detail.key} aria-describedby={navigationError?.key === detail.key ? 'jira-navigation-error' : undefined} onClick={openIssue}>{openingIssue === detail.key ? 'Opening...' : 'Open Jira issue'}</button>
+      {navigationError?.key === detail.key && <p id="jira-navigation-error" role="alert">Could not open {detail.key}. Try again.</p>}
+    </>}<p className="muted">Evidence comes from issue status and the configured inward dependency links. Hidden or missing links cannot be inferred. The selected inward relation is interpreted as a blocker.</p></>}</aside></div>
+    <section className="map"><div className="section-label">FOLLOW THE DEPENDENCIES</div><h2>From delivery to the work beneath it.</h2><p>Each column is one step farther from the selected issue. Select a card to inspect its source evidence.</p><div className="layers">{levels.map((keys, i) => <div className="layer" key={i}><h3>{i === 0 ? 'Selected issue' : `Dependency depth ${i}`}</h3>{keys.map(key => <button key={key} className={`node ${state(key)} ${selected === key ? 'selected' : ''}`} onClick={() => selectIssue(key)}><strong>{key}</strong><span>{nodes.get(key)?.summary || 'Unknown dependency'}</span><em>{state(key) === 'outside' ? 'Not needed in this scenario' : state(key) === 'assumed' ? 'Assumed complete' : state(key) === 'ready' ? 'No open linked blockers' : state(key) === 'blocked' ? 'Open linked blockers' : state(key)}</em></button>)}</div>)}</div></section>
     <footer><div><strong>Bring evidence to the release conversation.</strong><p>Scope: reachable open blockers, up to 60 reads and 8 dependency levels. Done issues stop traversal.</p></div><button onClick={() => setShowBrief(!showBrief)}>{showBrief ? 'Hide' : 'Prepare'} briefing</button></footer>
     {showBrief && <section><label htmlFor="brief">Copy this briefing into your planning notes</label><textarea id="brief" readOnly value={briefing(graph, result)} rows={14}/></section>}
   </main>;
